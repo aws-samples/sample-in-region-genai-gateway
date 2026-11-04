@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="refresh" content="60">
+<title>In-Region GenAI Gateway — Admin</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: #f5f5f7; margin: 0; padding: 24px; color: #1d1d1f; }
+  h1   { font-size: 22px; font-weight: 600; margin-bottom: 6px; }
+  .sub { color: #6e6e73; font-size: 13px; margin-bottom: 28px; }
+  .card { background: #fff; border-radius: 12px; padding: 20px 24px;
+          margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  h2   { font-size: 15px; font-weight: 600; margin: 0 0 14px; color: #1d1d1f; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th   { text-align: left; padding: 6px 12px; background: #f5f5f7;
+         color: #6e6e73; font-weight: 500; }
+  td   { padding: 8px 12px; border-top: 1px solid #e5e5ea; }
+  .dot-on  { color: #34c759; font-size: 16px; }
+  .dot-off { color: #c7c7cc; font-size: 16px; }
+  .tag { display: inline-block; background: #e5e5ea; border-radius: 6px;
+         padding: 2px 8px; font-size: 12px; }
+  .msg-ok  { background: #d1f8e0; color: #1a6635; border-radius: 8px;
+             padding: 10px 16px; margin-bottom: 16px; font-size: 13px; }
+  .msg-err { background: #fde8e8; color: #9b1c1c; border-radius: 8px;
+             padding: 10px 16px; margin-bottom: 16px; font-size: 13px; }
+  form { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  label { font-size: 13px; color: #6e6e73; display: block; margin-bottom: 4px; }
+  select, input[type=text], input[type=password] {
+    border: 1px solid #d1d1d6; border-radius: 8px; padding: 7px 10px;
+    font-size: 13px; background: #fff; }
+  button { background: #ff3b30; color: #fff; border: none; border-radius: 8px;
+           padding: 8px 18px; font-size: 13px; cursor: pointer; font-weight: 500; }
+  button:hover { background: #d70015; }
+  button.secondary { background: #007aff; }
+  button.secondary:hover { background: #0055cc; }
+  .refresh { font-size: 12px; color: #aeaeb2; }
+  .kv { font-size: 12px; color: #6e6e73; margin: 2px 0; }
+  .kv code { background: #f5f5f7; padding: 1px 6px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<h1>In-Region GenAI Gateway</h1>
+<div class="sub">Admin Console &nbsp;·&nbsp; <span class="refresh">자동 새로고침: 60초</span></div>
+
+{% if message %}
+  <div class="{{ 'msg-ok' if message.startswith('✅') else 'msg-err' }}">{{ message }}</div>
+{% endif %}
+
+<!-- Deployment 현황 -->
+<div class="card">
+  <h2>Deployment 현황</h2>
+  <table>
+    <tr><th>Alias</th><th>상태</th><th>Ready</th><th>Desired</th></tr>
+    {% for d in deployments %}
+    <tr>
+      <td><span class="tag">{{ d.alias }}</span></td>
+      <td>
+        {% if d.ready == '?' %}
+          <span style="color:#aeaeb2">알 수 없음</span>
+        {% elif d.ready >= 1 %}
+          <span class="dot-on">●</span> Running
+        {% else %}
+          <span class="dot-off">●</span> Stopped
+        {% endif %}
+      </td>
+      <td>{{ d.ready }}</td>
+      <td>{{ d.desired }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<!-- 활성 Reservations -->
+<div class="card">
+  <h2>활성 Reservations</h2>
+  {% if reservations %}
+  <table>
+    <tr><th>Alias</th><th>요청자</th><th>만료 (KST)</th><th>남은 시간</th></tr>
+    {% for r in reservations %}
+    <tr>
+      <td><span class="tag">{{ r.alias }}</span></td>
+      <td>{{ r.requester }}</td>
+      <td>{{ r.expireKST }}</td>
+      <td>{{ r.remainingMin }}분</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+    <div style="color:#aeaeb2; font-size:13px;">활성 reservation 없음</div>
+  {% endif %}
+</div>
+
+<!-- 일일 Warm-up 스케줄 -->
+<div class="card">
+  <h2>일일 Warm-up 스케줄</h2>
+  <div class="kv">
+    상태:
+    {% if schedule.enabled %}
+      <span class="dot-on">●</span> <strong>ENABLED</strong>
+      &nbsp;— 평일 08:30 KST에 자동으로 모든 모델 11시간 warm-up (GPU 비용 발생)
+    {% else %}
+      <span class="dot-off">●</span> <strong>{{ schedule.state }}</strong>
+      &nbsp;— 자동 warm-up 꺼짐 (GPU 비용 0, 수동 reservation만 동작)
+    {% endif %}
+  </div>
+  {% if schedule.scheduleExpression %}
+  <div class="kv">Cron: <code>{{ schedule.scheduleExpression }}</code></div>
+  {% endif %}
+  {% if schedule.error %}
+  <div class="kv" style="color:#9b1c1c;">오류: {{ schedule.error }}</div>
+  {% endif %}
+  <form method="post" action="/schedule/toggle" style="margin-top: 14px;">
+    <input type="hidden" name="action" value="{{ 'disable' if schedule.enabled else 'enable' }}">
+    <div>
+      <label>Admin 비밀번호</label>
+      <input type="password" name="password" placeholder="password" required>
+    </div>
+    <button type="submit" class="secondary">
+      {% if schedule.enabled %}Disable 스케줄{% else %}Enable 스케줄{% endif %}
+    </button>
+  </form>
+</div>
+
+<!-- 강제 Cool-down -->
+<div class="card">
+  <h2>강제 Cool-down (Admin 전용)</h2>
+  <form method="post" action="/cooldown">
+    <div>
+      <label>Alias</label>
+      <select name="alias">
+        <option value="all">all (전체)</option>
+        {% for a in all_aliases %}
+        <option value="{{ a }}">{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Admin 비밀번호</label>
+      <input type="password" name="password" placeholder="password" required>
+    </div>
+    <button type="submit">Force Scale-Down</button>
+  </form>
+</div>
+
+</body>
+</html>
